@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/internal/cache"
 	"fyne.io/fyne/v2/internal/widget"
 	"fyne.io/fyne/v2/theme"
+	"k8s.io/utils/strings/slices"
 )
 
 // allTreeNodesID represents all tree nodes when refreshing requested nodes
@@ -29,6 +30,8 @@ var _ fyne.Widget = (*Tree)(nil)
 type Tree struct {
 	BaseWidget
 	Root TreeNodeID
+
+	MultiSelect bool
 
 	ChildUIDs      func(uid TreeNodeID) (c []TreeNodeID)                     `json:"-"` // Return a sorted slice of Children TreeNodeIDs for the given Node TreeNodeID
 	CreateNode     func(branch bool) (o fyne.CanvasObject)                   `json:"-"` // Return a CanvasObject that can represent a Branch (if branch is true), or a Leaf (if branch is false)
@@ -300,8 +303,102 @@ func (t *Tree) ScrollToTop() {
 	t.Refresh()
 }
 
-// Select marks the specified node to be selected.
-func (t *Tree) Select(uid TreeNodeID) {
+// Select adds the specified node(s) to the selection.
+// If the tree is not multiselect, only the first given node will be processed
+// and if it needs to be selected, all other currently selected nodes will be unselected.
+func (t *Tree) Select(uids ...TreeNodeID) {
+	// Handle single select
+	if !t.MultiSelect {
+		nodeToSelect := uids[0]
+		isNodeAlreadySelected := false
+		for _, currentSelectedNode := range t.selected {
+			// Unselect other nodes
+			if currentSelectedNode != nodeToSelect {
+				if f := t.OnUnselected; f != nil {
+					f(currentSelectedNode)
+				}
+			} else {
+				isNodeAlreadySelected = true
+			}
+		}
+		t.selected = []TreeNodeID{nodeToSelect}
+		if !isNodeAlreadySelected {
+			// Node needed to be selected, fire the event
+			if f := t.OnSelected; f != nil {
+				f(nodeToSelect)
+			}
+		}
+		t.ScrollTo(nodeToSelect)
+	} else { // Handle multi select
+		for _, currentNode := range uids {
+			if !slices.Contains(t.selected, currentNode) {
+				t.selected = append(t.selected, currentNode)
+				if f := t.OnSelected; f != nil {
+					f(currentNode)
+				}
+			}
+		}
+		t.ScrollTo(uids[0])
+	}
+}
+
+// SelectAll adds all node(s) to the selection.
+// If the tree is not multiselect, only the very first node will be selected.
+func (t *Tree) SelectAll() {
+	// TODO: Abortable walk
+	if !t.MultiSelect {
+
+	} else {
+		t.selected = []TreeNodeID{}
+		t.walkAll(func(uid, parent TreeNodeID, branch bool, depth int) {
+			t.selected = append(t.selected, uid)
+			if branch {
+				t.propertyLock.Lock()
+				t.open[uid] = true
+				t.propertyLock.Unlock()
+			}
+		})
+	}
+	t.Refresh()
+}
+
+// SetSelection overwrites the current selection to the given nodes.
+// If the tree is not multiselect, only the first node given will be selected.
+func (t *Tree) SetSelection(uids ...TreeNodeID) {
+
+}
+
+// GetSelection returns the currently selected nodes.
+func (t *Tree) GetSelection() []TreeNodeID {
+
+}
+
+// Unselect unselects all given nodes.
+func (t *Tree) Unselect(uids ...TreeNodeID) {
+
+}
+
+// UnselectAll unselects all nodes.
+func (t *Tree) UnselectAll() {
+
+}
+
+// Select marks the specified node(s) to be selected.
+// If the tree is not a multiselect, only the first uid will be processed.
+func (t *Tree) Select(uid ...TreeNodeID) {
+	for _, currentUid := range uid {
+
+		if !slices.Contains(t.selected, currentUid) {
+			t.selected = []TreeNodeID{uid}
+			if f := t.OnSelected; f != nil {
+				f(uid)
+			}
+		}
+
+		if !t.MultiSelect {
+			break
+		}
+	}
 	if len(t.selected) > 0 {
 		if uid == t.selected[0] {
 			return // no change
@@ -315,6 +412,13 @@ func (t *Tree) Select(uid TreeNodeID) {
 	if f := t.OnSelected; f != nil {
 		f(uid)
 	}
+}
+
+// Selection returns the selected tree nodes.
+func (t *Tree) Selection() []TreeNodeID {
+	selectedResult := make([]TreeNodeID, 0, len(t.selected))
+	selectedResult = append(selectedResult, t.selected...)
+	return selectedResult
 }
 
 // ToggleBranch flips the state of the branch with the given TreeNodeID.
@@ -958,7 +1062,7 @@ func (r *treeNodeRenderer) partialRefresh() {
 		r.treeNode.icon.Refresh()
 	}
 	r.background.CornerRadius = theme.SelectionRadiusSize()
-	if len(r.treeNode.tree.selected) > 0 && r.treeNode.uid == r.treeNode.tree.selected[0] {
+	if len(r.treeNode.tree.selected) > 0 && slices.Contains(r.treeNode.tree.selected, r.treeNode.uid) {
 		r.background.FillColor = theme.SelectionColor()
 		r.background.Show()
 	} else if r.treeNode.hovered || (r.treeNode.tree.focused && r.treeNode.tree.currentFocus == r.treeNode.uid) {

@@ -285,6 +285,31 @@ func TestTree_Layout(t *testing.T) {
 	}
 }
 
+func TestTree_Selection(t *testing.T) {
+	data := map[string][]string{
+		"":     {"foo0", "foo1", "foo2"},
+		"foo0": {"foobar0"},
+		"foo1": {"foobar1"},
+		"foo2": {"foobar2"},
+	}
+	tree := widget.NewTreeWithStrings(data)
+
+	// Initially, nothing is selected
+	assert.Empty(t, tree.GetSelected())
+
+	// Select an item
+	tree.Select("foo0")
+	assert.ElementsMatch(t, tree.GetSelected(), []widget.TreeNodeID{"foo0"})
+
+	// Select another item
+	tree.Select("foobar1")
+	assert.ElementsMatch(t, tree.GetSelected(), []widget.TreeNodeID{"foo0", "foobar1"})
+
+	// Validate that everything was unselected
+	tree.UnselectAll()
+	assert.Empty(t, tree.GetSelected())
+}
+
 func TestTree_ChangeTheme(t *testing.T) {
 	test.NewApp()
 	defer test.NewApp()
